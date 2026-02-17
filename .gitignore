@@ -1,2 +1,23 @@
+# Environment
 bot/.env
 .env
+.env.local
+*.env
+
+# Python
+bot/venv/
+bot/__pycache__/
+*.pyc
+*.pyo
+
+# Next.js
+frontend/.next/
+frontend/node_modules/
+frontend/out/
+
+# System
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
