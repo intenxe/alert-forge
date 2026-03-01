@@ -76,6 +76,141 @@ No dashboards. No polling. Just alerts when it matters.
 
 ---
 
+## 🏗️ System Architecture
+```mermaid
+graph TB
+    subgraph "User Interface"
+        U[User via Telegram]
+    end
+
+    subgraph "Edge Layer - Cloudflare Workers"
+        CW[Cloudflare Worker<br/>Edge Routing]
+    end
+
+    subgraph "Command Layer - Make.com"
+        WH[Webhook Trigger]
+        R[Router<br/>Command Parser]
+        
+        subgraph "Command Routes"
+            START[/start<br/>User Registration/]
+            WATCH[/watch<br/>Add Wallet/]
+            UNWATCH[/unwatch<br/>Remove Wallet/]
+            LIST[/list<br/>Show Wallets/]
+            UPGRADE[/upgrade<br/>Payment Info/]
+            VERIFY[/verify<br/>Payment Verification/]
+        end
+        
+        subgraph "Payment Flow"
+            HTTP[Helius API Call<br/>Fetch Transaction]
+            CHK[Check Payment<br/>Valid USDC?]
+            DUP[Check Signature<br/>Already Used?]
+            UPG[Upgrade User Tier<br/>+ Log Payment]
+        end
+    end
+
+    subgraph "Monitoring Layer - Railway"
+        MON[Python Monitor<br/>monitor.py]
+        SEED[Startup Seeding<br/>Load 50 Existing Tx]
+        LOOP[60s Loop<br/>Check All Wallets]
+    end
+
+    subgraph "Data Layer - Supabase PostgreSQL"
+        DB[(Database)]
+        
+        subgraph "Tables"
+            TBL_U[users<br/>telegram_chat_id, tier]
+            TBL_B[bots<br/>user_id, wallet_address]
+            TBL_A[alerts<br/>bot_id, alert_data]
+            TBL_S[seen_signatures<br/>signature, wallet]
+            TBL_P[processed_payments<br/>signature, user_id, amount]
+        end
+    end
+
+    subgraph "External APIs"
+        HEL[Helius API<br/>Solana Blockchain Data]
+        TG[Telegram Bot API<br/>Send Messages]
+    end
+
+    subgraph "Blockchain"
+        SOL[Solana Network<br/>On-Chain Transactions]
+    end
+
+    %% User Flow
+    U -->|Commands| CW
+    CW -->|Forward| WH
+    WH --> R
+    
+    %% Command Routing
+    R -->|Parse| START
+    R -->|Parse| WATCH
+    R -->|Parse| UNWATCH
+    R -->|Parse| LIST
+    R -->|Parse| UPGRADE
+    R -->|Parse| VERIFY
+    
+    %% Payment Verification Flow
+    VERIFY --> HTTP
+    HTTP -->|Fetch Tx| HEL
+    HTTP --> CHK
+    CHK -->|Valid| DUP
+    DUP -->|New Sig| UPG
+    DUP -->|Used| TG
+    UPG --> DB
+    
+    %% All Commands → Database
+    START --> DB
+    WATCH --> DB
+    UNWATCH --> DB
+    LIST --> DB
+    UPGRADE --> TG
+    
+    %% All Commands → Telegram Response
+    START --> TG
+    WATCH --> TG
+    UNWATCH --> TG
+    LIST --> TG
+    UPG --> TG
+    
+    %% Monitoring Flow
+    MON -->|On Startup| SEED
+    SEED -->|Load Wallets| DB
+    SEED -->|Fetch Existing Tx| HEL
+    SEED -->|Mark Seen| DB
+    
+    MON -->|Every 60s| LOOP
+    LOOP -->|Get Active Wallets| DB
+    LOOP -->|Fetch Transactions| HEL
+    LOOP -->|Check if Seen| DB
+    LOOP -->|Send Alerts| TG
+    LOOP -->|Log Alerts| DB
+    
+    %% Helius ↔ Blockchain
+    HEL -->|Query| SOL
+    
+    %% Telegram → User
+    TG -->|Deliver| U
+    
+    %% Database Internal Relationships
+    TBL_U -.->|1:N| TBL_B
+    TBL_B -.->|1:N| TBL_A
+    TBL_U -.->|1:N| TBL_P
+    
+    %% Styling
+    classDef userClass fill:#e1f5ff,stroke:#0066cc,stroke-width:2px
+    classDef edgeClass fill:#fff4e6,stroke:#ff9900,stroke-width:2px
+    classDef makeClass fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
+    classDef railwayClass fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
+    classDef dbClass fill:#fff3e0,stroke:#ff6f00,stroke-width:2px
+    classDef apiClass fill:#e0f2f1,stroke:#009688,stroke-width:2px
+    
+    class U userClass
+    class CW edgeClass
+    class WH,R,START,WATCH,UNWATCH,LIST,UPGRADE,VERIFY,HTTP,CHK,DUP,UPG makeClass
+    class MON,SEED,LOOP railwayClass
+    class DB,TBL_U,TBL_B,TBL_A,TBL_S,TBL_P dbClass
+    class HEL,TG,SOL apiClass
+```
+
 ## 🔧 Self-Hosting
 
 ### Prerequisites
